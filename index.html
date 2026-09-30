@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Учёт корма</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, Roboto, sans-serif;
+      padding: 12px; background: #f4f4f4; max-width: 500px; margin: 0 auto;
+      padding-bottom: 40px;
+    }
+    h3 { margin: 8px 0 12px; text-align: center; }
+
+    /* ===== Индикатор сети ===== */
+    .net-status {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 8px 12px; border-radius: 8px;
+      font-size: 14px; font-weight: 600; margin-bottom: 10px;
+    }
+    .net-status.online  { background: #E8F5E9; color: #2E7D32; }
+    .net-status.offline { background: #FFEBEE; color: #C62828; }
+    .net-status.syncing { background: #FFF3E0; color: #E65100; }
+    .net-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: currentColor; animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* ===== Индикатор режима ===== */
+    .mode {
+      padding: 14px; text-align: center; border-radius: 10px;
+      margin-bottom: 12px; font-weight: bold; font-size: 18px;
+      transition: background 0.2s;
+    }
+    .mode.in   { background: #4CAF50; color: white; }
+    .mode.out  { background: #F44336; color: white; }
+    .mode.none { background: #bbb; color: white; }
+
+    button {
+      width: 100%; padding: 18px; font-size: 17px; margin: 8px 0;
+      border-radius: 10px; border: none; cursor: pointer;
+      font-weight: 600;
+    }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.6; }
+    .btn-in   { background: #4CAF50; color: white; }
+    .btn-out  { background: #F44336; color: white; }
+    .btn-scan { background: #2196F3; color: white; font-size: 19px; padding: 22px; }
+    .btn-secondary { background: #607D8B; color: white; font-size: 15px; padding: 14px; }
+
+    input {
+      width: 100%; padding: 12px; margin: 6px 0;
+      border-radius: 6px; border: 1px solid #ccc; font-size: 16px;
+    }
+
+    /* ===== Экран подтверждения ===== */
+    .confirm-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center;
+      padding: 16px; z-index: 100;
+    }
+    .confirm-overlay.active { display: flex; }
+
+    .confirm-box {
+      background: white; border-radius: 16px; padding: 20px;
+      width: 100%; max-width: 420px; text-align: center;
+      animation: pop 0.2s ease-out;
+    }
+    @keyframes pop {
+      from { transform: scale(0.85); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+    .confirm-icon { font-size: 56px; margin-bottom: 8px; }
+    .confirm-title { font-size: 22px; font-weight: bold; margin-bottom: 6px; }
+    .confirm-title.in  { color: #4CAF50; }
+    .confirm-title.out { color: #F44336; }
+
+    .confirm-details {
+      background: #f8f8f8; border-radius: 10px;
+      padding: 12px; margin: 14px 0; text-align: left; font-size: 15px;
+    }
+    .confirm-details .row {
+      display: flex; justify-content: space-between;
+      padding: 5px 0; border-bottom: 1px solid #eee;
+    }
+    .confirm-details .row:last-child { border-bottom: none; }
+    .confirm-details .label { color: #666; }
+    .confirm-details .value { font-weight: bold; text-align: right; }
+
+    .confirm-buttons { display: flex; gap: 10px; margin-top: 16px; }
+    .confirm-buttons button { flex: 1; margin: 0; padding: 16px; font-size: 16px; }
+    .btn-yes { background: #2196F3; color: white; }
+    .btn-no  { background: #eee; color: #333; }
+
+    /* ===== Экран журнала ===== */
+    .journal-overlay {
+      position: fixed; inset: 0; background: #f4f4f4;
+      display: none; flex-direction: column; z-index: 150;
+    }
+    .journal-overlay.active { display: flex; }
+
+    .journal-header {
+      background: #2196F3; color: white; padding: 14px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 18px; font-weight: 600;
+    }
+    .journal-header button {
+      width: auto; padding: 8px 14px; margin: 0; font-size: 14px;
+      background: rgba(255,255,255,0.2); color: white;
+    }
+    .journal-body { flex: 1; overflow-y: auto; padding: 12px; }
+    .journal-filters {
+      display: flex; gap: 8px; padding: 10px 12px;
+      background: white; border-bottom: 1px solid #e0e0e0;
+    }
+    .journal-filters button {
+      flex: 1; margin: 0; padding: 10px; font-size: 13px;
+      background: #e0e0e0; color: #333;
+    }
+    .journal-filters button.active { background: #2196F3; color: white; }
+
+    .journal-item {
+      background: white; border-radius: 10px; padding: 12px;
+      margin-bottom: 8px; display: flex; gap: 12px;
+      border-left: 4px solid #ccc;
+    }
+    .journal-item.in  { border-left-color: #4CAF50; }
+    .journal-item.out { border-left-color: #F44336; }
+    .journal-item.pending { background: #FFF9E6; }
+    .journal-item .j-icon {
+      font-size: 28px; flex-shrink: 0;
+      display: flex; align-items: center;
+    }
+    .journal-item .j-body { flex: 1; min-width: 0; }
+    .journal-item .j-title {
+      font-weight: bold; font-size: 15px; margin-bottom: 3px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .journal-item .j-sub {
+      font-size: 12px; color: #666; line-height: 1.4;
+    }
+    .journal-item .j-status {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      background: #e0e0e0; display: inline-block; margin-top: 4px;
+    }
+    .journal-item .j-status.pending { background: #FFE082; color: #795548; }
+    .journal-item .j-status.sent    { background: #C8E6C9; color: #2E7D32; }
+    .journal-item .j-status.error   { background: #FFCDD2; color: #B71C1C; }
+    .journal-empty { text-align: center; padding: 40px 20px; color: #999; }
+
+    /* ===== Тост ===== */
+    .toast {
+      position: fixed; left: 50%; bottom: 30px;
+      transform: translateX(-50%) translateY(80px);
+      background: #333; color: white; padding: 14px 22px;
+      border-radius: 10px; font-size: 15px; font-weight: 600;
+      opacity: 0; transition: all 0.3s ease;
+      z-index: 200; max-width: 90%; text-align: center;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast.ok   { background: #4CAF50; }
+    .toast.err  { background: #F44336; }
+    .toast.warn { background: #FF9800; }
+
+    /* ===== Мини-лог ===== */
+    .log {
+      background: white; padding: 12px; border-radius: 8px;
+      margin-top: 12px; font-size: 13px; max-height: 180px;
+      overflow-y: auto; font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h3>Склад корма</h3>
+
+  <div class="net-status online" id="netStatus">
+    <span class="net-dot"></span>
+    <span id="netText">Онлайн</span>
+  </div>
+
+  <div id="mode" class="mode none">Режим не выбран</div>
+
+  <button class="btn-in"  onclick="setMode('in')">+ ПРИХОД</button>
+  <button class="btn-out" onclick="setMode('out')">− РАСХОД</button>
+
+  <div id="batchInput" style="display:none; background: white; padding: 12px; border-radius: 8px; margin-top: 8px;">
+    <label>Дата производства:</label>
+    <input type="date" id="prodDate">
+    <label>Количество мешков:</label>
+    <input type="number" id="qty" value="1" min="1">
+  </div>
+
+  <button class="btn-scan" id="scanBtn" onclick="startScan()">📡 СКАНИРОВАТЬ МЕТКУ</button>
+  <button class="btn-secondary" onclick="manualSync()">🔄 СИНХРОНИЗИРОВАТЬ</button>
+  <button class="btn-secondary" onclick="openJournal()">📋 ЖУРНАЛ ИСТОРИИ</button>
+
+  <div id="log" class="log"></div>
+
+  <!-- Экран подтверждения -->
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+      <div class="confirm-icon" id="confirmIcon">❓</div>
+      <div class="confirm-title" id="confirmTitle">Подтверждение</div>
+      <div class="confirm-details" id="confirmDetails"></div>
+      <div class="confirm-buttons">
+        <button class="btn-no"  onclick="cancelConfirm()">ОТМЕНА</button>
+        <button class="btn-yes" id="confirmYesBtn" onclick="confirmOperation()">ПОДТВЕРДИТЬ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Экран журнала -->
+  <div class="journal-overlay" id="journalOverlay">
+    <div class="journal-header">
+      <span>📋 Журнал истории</span>
+      <div style="display:flex;gap:6px;">
+        <button onclick="exportJournalCSV()">⬇ CSV</button>
+        <button onclick="clearJournal()">🗑</button>
+        <button onclick="closeJournal()">✕</button>
+      </div>
+    </div>
+    <div class="journal-filters" id="journalFilters">
+      <button class="active" onclick="setFilter('all')">Все</button>
+      <button onclick="setFilter('in')">Приход</button>
+      <button onclick="setFilter('out')">Расход</button>
+      <button onclick="setFilter('pending')">Очередь</button>
+    </div>
+    <div class="journal-body" id="journalBody"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   НАСТРОЙКИ — ВСТАВЬТЕ СВОЙ URL
+   ============================================================ */
+const API_URL = 'https://script.google.com/macros/s/AKfycbx8t5SEmtTNnm3C0oe1w_gZ-ey0ZBGJNV2MgOS7vPE9w5uirD9k-_0H9ahkDM7J5vGJ/exec';
+
+/* ============================================================
+   ХРАНИЛИЩЕ
+   ============================================================ */
+const STORAGE_QUEUE   = 'feed_queue_v1';
+const STORAGE_HISTORY = 'feed_history_v1';
+const MAX_HISTORY     = 200;
+
+let currentMode = null;
+let pendingOperation = null;
+let scanning = false;
+let lastTagId = null;
+let lastTagTime = 0;
+let modeTimer = null;
+let journalFilter = 'all';
+let isSyncing = false;
+
+/* ============================================================
+   LOCALSTORAGE
+   ============================================================ */
+function loadQueue() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_QUEUE) || '[]'); }
+  catch { return []; }
+}
+function saveQueue(queue) {
+  localStorage.setItem(STORAGE_QUEUE, JSON.stringify(queue));
+  updateNetStatus();
+}
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_HISTORY) || '[]'); }
+  catch { return []; }
+}
+function saveHistory(history) {
+  if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+  localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history));
+}
+function addToQueue(op) {
+  const queue = loadQueue();
+  op.localId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  op.timestamp = new Date().toISOString();
+  op.status = 'pending';
+  queue.push(op);
+  saveQueue(queue);
+  const history = loadHistory();
+  history.unshift({ ...op });
+  saveHistory(history);
+  renderJournal();
+}
+function updateHistoryStatus(localId, status, serverData = {}) {
+  const history = loadHistory();
+  const item = history.find(h => h.localId === localId);
+  if (item) {
+    item.status = status;
+    if (serverData.feedName)    item.feedName = serverData.feedName;
+    if (serverData.batchId)     item.batchId = serverData.batchId;
+    if (serverData.totalStock !== undefined) item.totalStock = serverData.totalStock;
+    if (serverData.error)       item.error = serverData.error;
+    saveHistory(history);
+    renderJournal();
+  }
+}
+
+/* ============================================================
+   ИНДИКАТОР СЕТИ + СИНХРОНИЗАЦИЯ
+   ============================================================ */
+function updateNetStatus() {
+  const el = document.getElementById('netStatus');
+  const text = document.getElementById('netText');
+  const queue = loadQueue();
+  if (isSyncing) {
+    el.className = 'net-status syncing';
+    text.textContent = 'Синхронизация… (' + queue.length + ')';
+  } else if (navigator.onLine) {
+    if (queue.length > 0) {
+      el.className = 'net-status syncing';
+      text.textContent = 'Онлайн · в очереди ' + queue.length;
+    } else {
+      el.className = 'net-status online';
+      text.textContent = 'Онлайн';
+    }
+  } else {
+    el.className = 'net-status offline';
+    text.textContent = queue.length > 0
+      ? 'Оффлайн · в очереди ' + queue.length
+      : 'Оффлайн';
+  }
+}
+
+async function syncQueue(silent = false) {
+  if (isSyncing || !navigator.onLine) return;
+  const queue = loadQueue();
+  if (queue.length === 0) { updateNetStatus(); return; }
+
+  const initialCount = queue.length;
+  isSyncing = true;
+  updateNetStatus();
+
+  const remaining = [];
+  let sentCount = 0;
+  let errorCount = 0;
+
+  for (const op of queue) {
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          tagId: op.tagId,
+          operation: op.operation,
+          quantity: op.quantity,
+          productionDate: op.productionDate,
+          localId: op.localId
+        })
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        updateHistoryStatus(op.localId, 'error', { error: data.error });
+        errorCount++;
+      } else {
+        updateHistoryStatus(op.localId, 'sent', data);
+        sentCount++;
+      }
+    } catch (e) {
+      remaining.push(op);
+    }
+  }
+
+  saveQueue(remaining);
+  isSyncing = false;
+  updateNetStatus();
+
+  if (sentCount === 0 && errorCount === 0) return;
+
+  if (sentCount > 0 && remaining.length === 0) {
+    if (!silent) {
+      if (sentCount === 1) soundSyncSingle();
+      else soundSyncSuccess();
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+    }
+    showToast('✅ Синхронизировано: ' + sentCount, 'ok');
+    log('✅ Синхронизация: отправлено ' + sentCount);
+  } else if (sentCount > 0 && remaining.length > 0) {
+    if (!silent) {
+      soundSyncPartial();
+      if (navigator.vibrate) navigator.vibrate([80, 40, 80, 40, 80]);
+    }
+    showToast('✅ Отправлено: ' + sentCount + ' · осталось: ' + remaining.length, 'warn');
+    log('⚠️ Частично: ' + sentCount + ' из ' + initialCount);
+  } else if (errorCount > 0) {
+    if (!silent) {
+      soundError();
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+    showToast('❌ Ошибок: ' + errorCount, 'err');
+    log('❌ Ошибок синхронизации: ' + errorCount);
+  }
+}
+
+window.addEventListener('online',  () => { updateNetStatus(); syncQueue(false); });
+window.addEventListener('offline', () => updateNetStatus());
+setInterval(() => syncQueue(true), 30000);
+
+/* ============================================================
+   ЗВУКИ
+   ============================================================ */
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playSequence(sequence, type = 'sine') {
+  try {
+    const ctx = getAudioCtx();
+    const now = ctx.currentTime;
+    let offset = 0;
+    sequence.forEach(note => {
+      const start = now + offset + (note.delay || 0);
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = note.type || type;
+      osc.frequency.value = note.freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(note.volume || 0.25, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + note.duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + note.duration + 0.05);
+      offset += note.duration;
+    });
+  } catch (e) { console.warn('Звук недоступен:', e); }
+}
+function soundIn()      { playSequence([{freq:523,duration:0.10},{freq:659,duration:0.10},{freq:784,duration:0.18}]); }
+function soundOut()     { playSequence([{freq:659,duration:0.10},{freq:440,duration:0.20}]); }
+function soundSuccess() { playSequence([{freq:880,duration:0.08},{freq:1175,duration:0.14}]); }
+function soundError()   { playSequence([{freq:220,duration:0.12,type:'square',volume:0.2},{freq:180,duration:0.18,type:'square',volume:0.2}]); }
+function soundTagRead() { playSequence([{freq:1000,duration:0.06,volume:0.15}]); }
+function soundQueued()  { playSequence([{freq:523,duration:0.08},{freq:659,duration:0.14}]); }
+function soundSyncSuccess() { playSequence([{freq:659,duration:0.09},{freq:784,duration:0.09},{freq:988,duration:0.09},{freq:1319,duration:0.22}]); }
+function soundSyncPartial() { playSequence([{freq:880,duration:0.10},{freq:659,duration:0.10},{freq:523,duration:0.20}]); }
+function soundSyncSingle()  { playSequence([{freq:880,duration:0.08},{freq:1175,duration:0.08},{freq:1568,duration:0.18}]); }
+
+/* ============================================================
+   РЕЖИМ
+   ============================================================ */
+function setMode(mode) {
+  currentMode = mode;
+  const el = document.getElementById('mode');
+  el.className = 'mode ' + mode;
+  el.textContent = mode === 'in' ? 'РЕЖИМ: + ПРИХОД' : 'РЕЖИМ: − РАСХОД';
+  document.getElementById('batchInput').style.display = (mode === 'in') ? 'block' : 'none';
+  if (mode === 'in' && !document.getElementById('prodDate').value) {
+    document.getElementById('prodDate').valueAsDate = new Date();
+  }
+  clearTimeout(modeTimer);
+  modeTimer = setTimeout(() => {
+    if (pendingOperation) return;
+    currentMode = null;
+    el.className = 'mode none';
+    el.textContent = 'Режим сброшен (таймаут)';
+    document.getElementById('batchInput').style.display = 'none';
+  }, 120000);
+}
+
+/* ============================================================
+   СКАНИРОВАНИЕ
+   ============================================================ */
+async function startScan() {
+  if (!currentMode) { showToast('Сначала выберите режим', 'warn'); soundError(); return; }
+  if (!('NDEFReader' in window)) { showToast('NFC не поддерживается', 'err'); soundError(); return; }
+  if (scanning) return;
+
+  try {
+    scanning = true;
+    document.getElementById('scanBtn').textContent = '⏳ Ожидание метки...';
+    const reader = new NDEFReader();
+    await reader.scan();
+
+    reader.onreading = async (event) => {
+      const tagId = event.serialNumber;
+      const now = Date.now();
+      if (tagId === lastTagId && (now - lastTagTime) < 3000) {
+        showToast('Повторное сканирование — пропущено', 'warn');
+        return;
+      }
+      lastTagId = tagId;
+      lastTagTime = now;
+      scanning = false;
+      document.getElementById('scanBtn').textContent = '📡 СКАНИРОВАТЬ МЕТКУ';
+      soundTagRead();
+      await prepareConfirmation(tagId, currentMode);
+    };
+
+    reader.onreadingerror = () => {
+      scanning = false;
+      document.getElementById('scanBtn').textContent = '📡 СКАНИРОВАТЬ МЕТКУ';
+      showToast('Ошибка чтения метки', 'err');
+      soundError();
+    };
+  } catch (err) {
+    scanning = false;
+    document.getElementById('scanBtn').textContent = '📡 СКАНИРОВАТЬ МЕТКУ';
+    showToast('Ошибка: ' + err, 'err');
+    soundError();
+  }
+}
+
+/* ============================================================
+   ЭКРАН ПОДТВЕРЖДЕНИЯ
+   ============================================================ */
+async function prepareConfirmation(tagId, operation) {
+  const quantity = parseInt(document.getElementById('qty').value) || 1;
+  const productionDate = document.getElementById('prodDate')?.value || null;
+
+  let feedName = '…';
+  let totalStock = '…';
+  let offlineMode = false;
+
+  if (navigator.onLine) {
+    try {
+      const res = await fetch(API_URL + '?tagId=' + encodeURIComponent(tagId));
+      const info = await res.json();
+      if (!info.error) {
+        feedName = info.feedName;
+        totalStock = info.totalStock;
+      }
+    } catch (e) {
+      offlineMode = true;
+      feedName = '📴 оффлайн';
+      totalStock = '—';
+    }
+  } else {
+    offlineMode = true;
+    feedName = '📴 оффлайн';
+    totalStock = '—';
+  }
+
+  pendingOperation = { tagId, operation, quantity, productionDate, feedName, totalStock, offlineMode };
+  showConfirmScreen();
+}
+
+function showConfirmScreen() {
+  const op = pendingOperation;
+  const overlay = document.getElementById('confirmOverlay');
+  const icon = document.getElementById('confirmIcon');
+  const title = document.getElementById('confirmTitle');
+  const details = document.getElementById('confirmDetails');
+
+  if (op.operation === 'in') {
+    icon.textContent = '➕';
+    title.textContent = 'ПРИХОД';
+    title.className = 'confirm-title in';
+    soundIn();
+  } else {
+    icon.textContent = '➖';
+    title.textContent = 'РАСХОД';
+    title.className = 'confirm-title out';
+    soundOut();
+  }
+  if (navigator.vibrate) navigator.vibrate(op.operation === 'in' ? [80] : [80, 60, 80]);
+
+  let html = '<div class="row"><span class="label">Рецептура</span><span class="value">' + op.feedName + '</span></div>' +
+             '<div class="row"><span class="label">Метка</span><span class="value">' + op.tagId.slice(-8) + '</span></div>' +
+             '<div class="row"><span class="label">Количество</span><span class="value">' + op.quantity + ' меш.</span></div>';
+  if (op.operation === 'in' && op.productionDate) {
+    html += '<div class="row"><span class="label">Дата произв.</span><span class="value">' + op.productionDate + '</span></div>';
+  }
+  html += '<div class="row"><span class="label">Текущий остаток</span><span class="value">' + op.totalStock + '</span></div>';
+  if (op.offlineMode) {
+    html += '<div class="row"><span class="label" style="color:#E65100;">📴 Оффлайн</span><span class="value" style="color:#E65100;">в очередь</span></div>';
+  }
+  details.innerHTML = html;
+
+  document.getElementById('confirmYesBtn').style.background =
+    (op.operation === 'in') ? '#4CAF50' : '#F44336';
+  document.getElementById('confirmYesBtn').style.color = 'white';
+  overlay.classList.add('active');
+}
+
+function cancelConfirm() {
+  document.getElementById('confirmOverlay').classList.remove('active');
+  pendingOperation = null;
+  soundError();
+  showToast('Операция отменена', 'warn');
+}
+
+async function confirmOperation() {
+  if (!pendingOperation) return;
+  const op = pendingOperation;
+  document.getElementById('confirmOverlay').classList.remove('active');
+
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('scanBtn').textContent = '⏳ Сохранение...';
+
+  if (navigator.onLine) {
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          tagId: op.tagId,
+          operation: op.operation,
+          quantity: op.quantity,
+          productionDate: op.productionDate
+        })
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        soundError();
+        showToast('❌ ' + data.error, 'err');
+        log('❌ ' + data.error);
+      } else {
+        soundSuccess();
+        const sign = op.operation === 'in' ? '+' : '−';
+        const msg = sign + op.quantity + ' ' + data.feedName + ' | остаток: ' + data.totalStock;
+        showToast('✅ ' + msg, 'ok');
+        log('✅ ' + msg);
+
+        const history = loadHistory();
+        history.unshift({
+          localId: 'op_' + Date.now(),
+          timestamp: new Date().toISOString(),
+          tagId: op.tagId,
+          operation: op.operation,
+          quantity: op.quantity,
+          productionDate: op.productionDate,
+          feedName: data.feedName,
+          batchId: data.batchId,
+          totalStock: data.totalStock,
+          status: 'sent'
+        });
+        saveHistory(history);
+        renderJournal();
+      }
+    } catch (e) {
+      soundQueued();
+      showToast('📴 Оффлайн — в очередь', 'warn');
+      addToQueue(op);
+      log('📴 В очередь (' + loadQueue().length + ')');
+    }
+  } else {
+    soundQueued();
+    showToast('📴 Сохранено в очередь', 'warn');
+    addToQueue(op);
+    log('📴 В очередь (' + loadQueue().length + ')');
+  }
+
+  pendingOperation = null;
+  document.getElementById('scanBtn').disabled = false;
+  document.getElementById('scanBtn').textContent = '📡 СКАНИРОВАТЬ МЕТКУ';
+
+  setTimeout(() => {
+    if (!pendingOperation) {
+      currentMode = null;
+      const el = document.getElementById('mode');
+      el.className = 'mode none';
+      el.textContent = 'Режим сброшен';
+      document.getElementById('batchInput').style.display = 'none';
+    }
+  }, 1500);
+}
+
+/* ============================================================
+   РУЧНАЯ СИНХРОНИЗАЦИЯ
+   ============================================================ */
+function manualSync() {
+  if (!navigator.onLine) {
+    soundError();
+    showToast('📴 Нет сети', 'err');
+    return;
+  }
+  const queue = loadQueue();
+  if (queue.length === 0) {
+    soundSuccess();
+    showToast('Очередь пуста', 'ok');
+    return;
+  }
+  showToast('Синхронизация ' + queue.length + ' операций…', 'warn');
+  syncQueue(false);
+}
+
+/* ============================================================
+   ЖУРНАЛ
+   ============================================================ */
+function openJournal() {
+  document.getElementById('journalOverlay').classList.add('active');
+  renderJournal();
+}
+function closeJournal() {
+  document.getElementById('journalOverlay').classList.remove('active');
+}
+function setFilter(f) {
+  journalFilter = f;
+  const filters = ['all', 'in', 'out', 'pending'];
+  document.querySelectorAll('#journalFilters button').forEach((b, i) => {
+    b.classList.toggle('active', filters[i] === f);
+  });
+  renderJournal();
+}
+function renderJournal() {
+  const body = document.getElementById('journalBody');
+  if (!body) return;
+  let history = loadHistory();
+  if (journalFilter === 'in')      history = history.filter(h => h.operation === 'in');
+  else if (journalFilter === 'out') history = history.filter(h => h.operation === 'out');
+  else if (journalFilter === 'pending') history = history.filter(h => h.status === 'pending');
+
+  if (history.length === 0) {
+    body.innerHTML = '<div class="journal-empty">Пока нет операций</div>';
+    return;
+  }
+
+  body.innerHTML = history.map(item => {
+    const isIn = item.operation === 'in';
+    const date = new Date(item.timestamp);
+    const dateStr = date.toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+    const sign = isIn ? '+' : '−';
+    let statusBadge = '';
+    if (item.status === 'pending') statusBadge = '<span class="j-status pending">⏳ В очереди</span>';
+    else if (item.status === 'sent') statusBadge = '<span class="j-status sent">✅ Отправлено</span>';
+    else if (item.status === 'error') statusBadge = '<span class="j-status error">❌ ' + (item.error || 'Ошибка') + '</span>';
+
+    return '<div class="journal-item ' + (isIn ? 'in' : 'out') + ' ' + (item.status === 'pending' ? 'pending' : '') + '">' +
+      '<div class="j-icon">' + (isIn ? '➕' : '➖') + '</div>' +
+      '<div class="j-body">' +
+        '<div class="j-title">' + sign + item.quantity + ' · ' + (item.feedName || item.tagId.slice(-8)) + '</div>' +
+        '<div class="j-sub">' + dateStr +
+          (item.batchId ? ' · партия ' + item.batchId : '') +
+          (item.totalStock !== undefined ? ' · остаток: ' + item.totalStock : '') +
+        '</div>' + statusBadge +
+      '</div></div>';
+  }).join('');
+}
+function clearJournal() {
+  if (!confirm('Очистить историю? Неотправленные операции останутся.')) return;
+  const history = loadHistory().filter(h => h.status === 'pending');
+  saveHistory(history);
+  renderJournal();
+  showToast('История очищена', 'warn');
+}
+function exportJournalCSV() {
+  const history = loadHistory();
+  if (history.length === 0) { showToast('Нет данных', 'warn'); return; }
+  const headers = ['Дата/время', 'Тип', 'Рецептура', 'Кол-во', 'Метка', 'Партия', 'Остаток', 'Статус'];
+  const rows = history.map(h => [
+    new Date(h.timestamp).toLocaleString('ru-RU'),
+    h.operation === 'in' ? 'Приход' : 'Расход',
+    h.feedName || '',
+    h.quantity,
+    h.tagId,
+    h.batchId || '',
+    h.totalStock ?? '',
+    h.status
+  ]);
+  const csv = [headers, ...rows]
+    .map(row => row.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';'))
+    .join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'feed_journal_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV сохранён', 'ok');
+}
+
+/* ============================================================
+   УТИЛИТЫ
+   ============================================================ */
+let toastTimer = null;
+function showToast(message, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = 'toast show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast ' + type; }, 2500);
+}
+function log(msg) {
+  const el = document.getElementById('log');
+  el.innerHTML = '<div>' + new Date().toLocaleTimeString() + ': ' + msg + '</div>' + el.innerHTML;
+}
+
+/* ============================================================
+   ИНИЦИАЛИЗАЦИЯ
+   ============================================================ */
+document.body.addEventListener('touchstart', () => getAudioCtx(), { once: true });
+document.body.addEventListener('click',      () => getAudioCtx(), { once: true });
+updateNetStatus();
+setTimeout(() => syncQueue(true), 1000);
+renderJournal();
+</script>
+</body>
+</html>
