@@ -54,6 +54,10 @@
       width: 100%; padding: 12px; margin: 6px 0;
       border-radius: 6px; border: 1px solid #ccc; font-size: 16px;
     }
+    label {
+      display: block; margin-top: 8px; font-size: 14px; color: #555;
+      font-weight: 600;
+    }
 
     /* ===== Экран подтверждения ===== */
     .confirm-overlay {
@@ -236,13 +240,10 @@
 
 <script>
 /* ============================================================
-   НАСТРОЙКИ — ВСТАВЬТЕ СВОЙ URL
+   НАСТРОЙКИ
    ============================================================ */
 const API_URL = 'https://script.google.com/macros/s/AKfycbx8t5SEmtTNnm3C0oe1w_gZ-ey0ZBGJNV2MgOS7vPE9w5uirD9k-_0H9ahkDM7J5vGJ/exec';
 
-/* ============================================================
-   ХРАНИЛИЩЕ
-   ============================================================ */
 const STORAGE_QUEUE   = 'feed_queue_v1';
 const STORAGE_HISTORY = 'feed_history_v1';
 const MAX_HISTORY     = 200;
@@ -523,7 +524,9 @@ async function startScan() {
    ============================================================ */
 async function prepareConfirmation(tagId, operation) {
   const quantity = parseInt(document.getElementById('qty').value) || 1;
-  const productionDate = document.getElementById('prodDate')?.value || null;
+  const productionDate = (operation === 'in')
+    ? (document.getElementById('prodDate')?.value || null)
+    : null;
 
   let feedName = '…';
   let totalStock = '…';
@@ -613,7 +616,8 @@ async function confirmOperation() {
           tagId: op.tagId,
           operation: op.operation,
           quantity: op.quantity,
-          productionDate: op.productionDate
+          productionDate: op.productionDate,
+          localId: 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
         })
       });
       const data = await res.json();
@@ -662,16 +666,17 @@ async function confirmOperation() {
   document.getElementById('scanBtn').disabled = false;
   document.getElementById('scanBtn').textContent = '📡 СКАНИРОВАТЬ МЕТКУ';
 
-   setTimeout(() => {
+  setTimeout(() => {
     if (!pendingOperation) {
       currentMode = null;
       const el = document.getElementById('mode');
       el.className = 'mode none';
       el.textContent = 'Режим сброшен';
       document.getElementById('batchInput').style.display = 'none';
-      document.getElementById('qty').value = 1;  // сброс количества
+      document.getElementById('qty').value = 1;
     }
   }, 1500);
+}
 
 /* ============================================================
    РУЧНАЯ СИНХРОНИЗАЦИЯ
