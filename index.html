@@ -186,10 +186,12 @@
   <button class="btn-out" onclick="setMode('out')">− РАСХОД</button>
 
   <div id="batchInput" style="display:none; background: white; padding: 12px; border-radius: 8px; margin-top: 8px;">
-    <label>Дата производства:</label>
-    <input type="date" id="prodDate">
+    <div id="prodDateBlock">
+      <label>Дата производства:</label>
+      <input type="date" id="prodDate">
+    </div>
     <label>Количество мешков:</label>
-    <input type="number" id="qty" value="1" min="1">
+    <input type="number" id="qty" value="1" min="1" max="999">
   </div>
 
   <button class="btn-scan" id="scanBtn" onclick="startScan()">📡 СКАНИРОВАТЬ МЕТКУ</button>
@@ -448,10 +450,21 @@ function setMode(mode) {
   const el = document.getElementById('mode');
   el.className = 'mode ' + mode;
   el.textContent = mode === 'in' ? 'РЕЖИМ: + ПРИХОД' : 'РЕЖИМ: − РАСХОД';
-  document.getElementById('batchInput').style.display = (mode === 'in') ? 'block' : 'none';
+
+  // Показываем блок с полями в обоих режимах
+  document.getElementById('batchInput').style.display = 'block';
+
+  // Поле «Дата производства» — только для прихода
+  document.getElementById('prodDateBlock').style.display = (mode === 'in') ? 'block' : 'none';
+
+  // Ставим сегодняшнюю дату при приходе
   if (mode === 'in' && !document.getElementById('prodDate').value) {
     document.getElementById('prodDate').valueAsDate = new Date();
   }
+
+  // Сбрасываем количество на 1 при каждом переключении режима
+  document.getElementById('qty').value = 1;
+
   clearTimeout(modeTimer);
   modeTimer = setTimeout(() => {
     if (pendingOperation) return;
@@ -649,16 +662,16 @@ async function confirmOperation() {
   document.getElementById('scanBtn').disabled = false;
   document.getElementById('scanBtn').textContent = '📡 СКАНИРОВАТЬ МЕТКУ';
 
-  setTimeout(() => {
+   setTimeout(() => {
     if (!pendingOperation) {
       currentMode = null;
       const el = document.getElementById('mode');
       el.className = 'mode none';
       el.textContent = 'Режим сброшен';
       document.getElementById('batchInput').style.display = 'none';
+      document.getElementById('qty').value = 1;  // сброс количества
     }
   }, 1500);
-}
 
 /* ============================================================
    РУЧНАЯ СИНХРОНИЗАЦИЯ
