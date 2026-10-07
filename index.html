@@ -49,6 +49,7 @@
     .btn-out  { background: #F44336; color: white; }
     .btn-scan { background: #2196F3; color: white; font-size: 19px; padding: 22px; }
     .btn-secondary { background: #607D8B; color: white; font-size: 15px; padding: 14px; }
+    .btn-report { background: #9C27B0; color: white; font-size: 15px; padding: 14px; }
     .btn-logout { background: #795548; color: white; font-size: 14px; padding: 12px; }
 
     input {
@@ -60,7 +61,7 @@
       font-weight: 600;
     }
 
-    /* ===== Бейдж участка в шапке ===== */
+    /* ===== Бейдж участка ===== */
     .site-badge {
       display: inline-block; padding: 4px 12px;
       border-radius: 20px; font-size: 13px; font-weight: 600;
@@ -201,6 +202,95 @@
     .journal-item .j-status.error   { background: #FFCDD2; color: #B71C1C; }
     .journal-empty { text-align: center; padding: 40px 20px; color: #999; }
 
+    /* ===== Экран отчёта ===== */
+    .report-overlay {
+      position: fixed; inset: 0; background: #f4f4f4;
+      display: none; flex-direction: column; z-index: 160;
+    }
+    .report-overlay.active { display: flex; }
+
+    .report-header {
+      background: #9C27B0; color: white; padding: 14px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 18px; font-weight: 600;
+    }
+    .report-header button {
+      width: auto; padding: 8px 14px; margin: 0; font-size: 14px;
+      background: rgba(255,255,255,0.2); color: white;
+    }
+
+    .report-filters {
+      display: flex; gap: 8px; padding: 10px 12px;
+      background: white; border-bottom: 1px solid #e0e0e0;
+    }
+    .report-filters button {
+      flex: 1; margin: 0; padding: 10px; font-size: 13px;
+      background: #e0e0e0; color: #333;
+    }
+    .report-filters button.active { background: #9C27B0; color: white; }
+
+    .report-body { flex: 1; overflow-y: auto; padding: 12px; }
+
+    .report-empty {
+      text-align: center; padding: 40px 20px; color: #999;
+    }
+
+    .report-site {
+      background: white; border-radius: 12px; padding: 16px;
+      margin-bottom: 12px; border-left: 5px solid #2196F3;
+    }
+    .report-site.sadkovy    { border-left-color: #1565C0; }
+    .report-site.basseynovy { border-left-color: #AD1457; }
+
+    .report-site h3 {
+      margin: 0 0 12px; font-size: 18px; color: #333;
+      display: flex; align-items: center;
+    }
+    .report-site h3 .site-icon {
+      font-size: 24px; margin-right: 8px;
+    }
+
+    .report-totals {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .report-total {
+      flex: 1; padding: 10px; border-radius: 8px; text-align: center;
+    }
+    .report-total.in  { background: #E8F5E9; color: #2E7D32; }
+    .report-total.out { background: #FFEBEE; color: #C62828; }
+    .report-total .label { font-size: 11px; opacity: 0.8; }
+    .report-total .value { font-size: 20px; font-weight: bold; }
+
+    .report-feeds {
+      margin-top: 12px; border-top: 1px solid #eee; padding-top: 12px;
+    }
+    .report-feed {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid #f0f0f0;
+      font-size: 14px;
+    }
+    .report-feed:last-child { border-bottom: none; }
+
+    .report-feed .name {
+      flex: 1; color: #333; font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding-right: 8px;
+    }
+    .report-feed .numbers {
+      display: flex; gap: 12px; font-size: 13px;
+    }
+    .report-feed .in   { color: #2E7D32; font-weight: 600; min-width: 40px; text-align: right; }
+    .report-feed .out  { color: #C62828; font-weight: 600; min-width: 40px; text-align: right; }
+
+    .report-feed-header {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: #999; text-transform: uppercase;
+      padding-bottom: 6px; border-bottom: 1px solid #eee;
+    }
+    .report-feed-header .name { flex: 1; }
+    .report-feed-header .numbers { display: flex; gap: 12px; }
+    .report-feed-header .numbers span { min-width: 40px; text-align: right; }
+
     /* ===== Тост ===== */
     .toast {
       position: fixed; left: 50%; bottom: 30px;
@@ -275,6 +365,7 @@
   <button class="btn-scan" id="scanBtn" onclick="startScan()">📡 СКАНИРОВАТЬ МЕТКУ</button>
   <button class="btn-secondary" onclick="manualSync()">🔄 СИНХРОНИЗИРОВАТЬ</button>
   <button class="btn-secondary" onclick="openJournal()">📋 ЖУРНАЛ ИСТОРИИ</button>
+  <button class="btn-report" onclick="openReport()">📊 ОТЧЁТ ПО УЧАСТКАМ</button>
   <button class="btn-logout" onclick="logout()">🚪 СМЕНИТЬ УЧАСТОК</button>
 
   <div id="log" class="log"></div>
@@ -311,6 +402,28 @@
     <div class="journal-body" id="journalBody"></div>
   </div>
 
+  <!-- Экран отчёта -->
+  <div class="report-overlay" id="reportOverlay">
+    <div class="report-header">
+      <span>📊 Отчёт по участкам</span>
+      <div style="display:flex;gap:6px;">
+        <button onclick="exportReportCSV()">⬇ CSV</button>
+        <button onclick="closeReport()">✕</button>
+      </div>
+    </div>
+
+    <div class="report-filters">
+      <button data-period="day"   onclick="setReportPeriod('day')">День</button>
+      <button data-period="week"  onclick="setReportPeriod('week')">Неделя</button>
+      <button data-period="month" class="active" onclick="setReportPeriod('month')">Месяц</button>
+      <button data-period="all"   onclick="setReportPeriod('all')">Всё</button>
+    </div>
+
+    <div class="report-body" id="reportBody">
+      <div class="report-empty">Загрузка...</div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
 <script>
@@ -336,6 +449,8 @@ let sessionInterval = null;
 let journalFilter = 'all';
 let isSyncing = false;
 let currentSite = null;
+let currentReportPeriod = 'month';
+let currentReportData = null;
 
 /* ============================================================
    СЕССИЯ
@@ -379,8 +494,6 @@ function startSessionTimer() {
   if (remaining <= 0) { forceLogout(); return; }
 
   sessionTimer = setTimeout(forceLogout, remaining);
-
-  // Обновляем отображение времени каждые 10 секунд
   sessionInterval = setInterval(updateSessionInfo, 10000);
 }
 
@@ -404,11 +517,10 @@ function forceLogout() {
   clearSession();
   currentSite = null;
 
-  // Закрываем все оверлеи
   document.getElementById('confirmOverlay').classList.remove('active');
   document.getElementById('journalOverlay').classList.remove('active');
+  document.getElementById('reportOverlay').classList.remove('active');
 
-  // Сбрасываем режим
   currentMode = null;
   pendingOperation = null;
   const modeEl = document.getElementById('mode');
@@ -416,7 +528,6 @@ function forceLogout() {
   modeEl.textContent = 'Режим не выбран';
   document.getElementById('batchInput').style.display = 'none';
 
-  // Показываем экран входа
   document.getElementById('loginOverlay').classList.remove('hidden');
   document.getElementById('loginError').textContent = '';
   document.getElementById('loginStatus').textContent = 'Сессия истекла. Приложите метку участка заново.';
@@ -462,7 +573,6 @@ async function loginByNfc() {
           return;
         }
 
-        // Успешный вход
         currentSite = data.site;
         saveSession(currentSite);
         soundSuccess();
@@ -563,7 +673,7 @@ function updateHistoryStatus(localId, status, serverData = {}) {
 }
 
 /* ============================================================
-   ИНДИКАТОР СЕТИ + СИНХРОНИЗАЦИЯ
+   СЕТЬ + СИНХРОНИЗАЦИЯ
    ============================================================ */
 function updateNetStatus() {
   const el = document.getElementById('netStatus');
@@ -1054,6 +1164,151 @@ function exportJournalCSV() {
   a.download = 'feed_journal_' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
   URL.revokeObjectURL(url);
+  showToast('CSV сохранён', 'ok');
+}
+
+/* ============================================================
+   ОТЧЁТ ПО УЧАСТКАМ
+   ============================================================ */
+function openReport() {
+  document.getElementById('reportOverlay').classList.add('active');
+  loadReport(currentReportPeriod);
+}
+
+function closeReport() {
+  document.getElementById('reportOverlay').classList.remove('active');
+}
+
+function setReportPeriod(period) {
+  currentReportPeriod = period;
+  document.querySelectorAll('.report-filters button').forEach(b => {
+    b.classList.toggle('active', b.dataset.period === period);
+  });
+  loadReport(period);
+}
+
+async function loadReport(period) {
+  const body = document.getElementById('reportBody');
+  body.innerHTML = '<div class="report-empty">⏳ Загрузка...</div>';
+
+  if (!navigator.onLine) {
+    body.innerHTML = '<div class="report-empty">📴 Нет сети — отчёт недоступен</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch(API_URL + '?action=report&period=' + period);
+    const data = await res.json();
+
+    if (data.error) {
+      body.innerHTML = '<div class="report-empty">❌ ' + data.error + '</div>';
+      return;
+    }
+
+    currentReportData = data;
+    renderReport(data);
+  } catch (e) {
+    body.innerHTML = '<div class="report-empty">❌ Ошибка сети</div>';
+  }
+}
+
+function renderReport(data) {
+  const body = document.getElementById('reportBody');
+  const sites = data.sites || {};
+
+  const siteNames = Object.keys(sites);
+
+  if (siteNames.length === 0) {
+    body.innerHTML = '<div class="report-empty">За выбранный период операций нет</div>';
+    return;
+  }
+
+  let html = '';
+
+  siteNames.sort((a, b) => {
+    const order = { 'Садковый': 1, 'Бассейновый': 2 };
+    return (order[a] || 99) - (order[b] || 99);
+  });
+
+  for (const siteName of siteNames) {
+    const siteData = sites[siteName];
+    const cls = siteName === 'Садковый' ? 'sadkovy'
+              : siteName === 'Бассейновый' ? 'basseynovy' : '';
+    const icon = siteName === 'Садковый' ? '🐟'
+               : siteName === 'Бассейновый' ? '🏊' : '📍';
+
+    html += '<div class="report-site ' + cls + '">';
+    html += '<h3><span class="site-icon">' + icon + '</span>' + siteName + '</h3>';
+
+    html += '<div class="report-totals">' +
+              '<div class="report-total in">' +
+                '<div class="label">Приход</div>' +
+                '<div class="value">+' + siteData.totals.in + '</div>' +
+              '</div>' +
+              '<div class="report-total out">' +
+                '<div class="label">Расход</div>' +
+                '<div class="value">−' + siteData.totals.out + '</div>' +
+              '</div>' +
+            '</div>';
+
+    if (siteData.feeds && siteData.feeds.length > 0) {
+      html += '<div class="report-feeds">';
+      html += '<div class="report-feed-header">' +
+                '<div class="name">Рецептура</div>' +
+                '<div class="numbers">' +
+                  '<span>+</span><span>−</span>' +
+                '</div>' +
+              '</div>';
+
+      for (const feed of siteData.feeds) {
+        html += '<div class="report-feed">' +
+                  '<div class="name">' + feed.feedName + '</div>' +
+                  '<div class="numbers">' +
+                    '<span class="in">+' + feed.in + '</span>' +
+                    '<span class="out">−' + feed.out + '</span>' +
+                  '</div>' +
+                '</div>';
+      }
+      html += '</div>';
+    }
+
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+function exportReportCSV() {
+  if (!currentReportData || !currentReportData.sites) {
+    showToast('Нет данных для экспорта', 'warn');
+    return;
+  }
+
+  const headers = ['Участок', 'Рецептура', 'Приход', 'Расход', 'Баланс'];
+  const rows = [];
+
+  for (const siteName in currentReportData.sites) {
+    const site = currentReportData.sites[siteName];
+    for (const feed of site.feeds) {
+      rows.push([siteName, feed.feedName, feed.in, feed.out, feed.balance]);
+    }
+  }
+
+  const period = { day: 'день', week: 'неделя', month: 'месяц', all: 'всё время' };
+  const periodName = period[currentReportPeriod] || 'период';
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';'))
+    .join('\n');
+
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'report_' + periodName + '_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+
   showToast('CSV сохранён', 'ok');
 }
 
