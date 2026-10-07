@@ -49,6 +49,7 @@
     .btn-out  { background: #F44336; color: white; }
     .btn-scan { background: #2196F3; color: white; font-size: 19px; padding: 22px; }
     .btn-secondary { background: #607D8B; color: white; font-size: 15px; padding: 14px; }
+    .btn-logout { background: #795548; color: white; font-size: 14px; padding: 12px; }
 
     input {
       width: 100%; padding: 12px; margin: 6px 0;
@@ -57,6 +58,52 @@
     label {
       display: block; margin-top: 8px; font-size: 14px; color: #555;
       font-weight: 600;
+    }
+
+    /* ===== Бейдж участка в шапке ===== */
+    .site-badge {
+      display: inline-block; padding: 4px 12px;
+      border-radius: 20px; font-size: 13px; font-weight: 600;
+      margin-left: 8px; vertical-align: middle;
+    }
+    .site-badge.sadkovy    { background: #E3F2FD; color: #1565C0; }
+    .site-badge.basseynovy { background: #FCE4EC; color: #AD1457; }
+
+    /* ===== Экран входа ===== */
+    .login-overlay {
+      position: fixed; inset: 0; background: #f4f4f4;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 300; padding: 20px;
+    }
+    .login-overlay.hidden { display: none; }
+
+    .login-box {
+      background: white; border-radius: 16px; padding: 24px;
+      width: 100%; max-width: 400px; text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .login-box h2 { margin: 0 0 8px; color: #2196F3; }
+    .login-box p { color: #666; margin: 0 0 16px; }
+
+    .login-icon {
+      font-size: 72px; margin: 20px 0;
+      animation: pulse 1.5s infinite;
+    }
+
+    #loginStatus {
+      font-size: 15px; color: #333;
+      padding: 12px; background: #f8f8f8; border-radius: 8px;
+      margin: 12px 0;
+    }
+
+    .btn-login-scan {
+      background: #2196F3; color: white;
+      padding: 18px; font-size: 17px; margin-top: 12px;
+    }
+
+    .login-error {
+      color: #F44336; font-size: 14px;
+      margin-top: 12px; min-height: 20px; font-weight: 600;
     }
 
     /* ===== Экран подтверждения ===== */
@@ -98,7 +145,7 @@
     .btn-yes { background: #2196F3; color: white; }
     .btn-no  { background: #eee; color: #333; }
 
-    /* ===== Экран журнала ===== */
+    /* ===== Журнал ===== */
     .journal-overlay {
       position: fixed; inset: 0; background: #f4f4f4;
       display: none; flex-direction: column; z-index: 150;
@@ -174,10 +221,37 @@
       margin-top: 12px; font-size: 13px; max-height: 180px;
       overflow-y: auto; font-family: monospace;
     }
+
+    /* ===== Инфо о сессии ===== */
+    .session-info {
+      text-align: center; font-size: 12px; color: #666;
+      margin-bottom: 8px;
+    }
+    .session-info b { color: #333; }
   </style>
 </head>
 <body>
-  <h3>Склад корма</h3>
+
+  <!-- ================= ЭКРАН ВХОДА ================= -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+      <h2>Склад корма</h2>
+      <p>Приложите метку участка к телефону</p>
+
+      <div class="login-icon">📡</div>
+
+      <div id="loginStatus">Готов к сканированию</div>
+
+      <button class="btn-login-scan" id="loginScanBtn" onclick="loginByNfc()">НАЧАТЬ СКАНИРОВАНИЕ</button>
+
+      <div class="login-error" id="loginError"></div>
+    </div>
+  </div>
+
+  <!-- ================= ОСНОВНОЙ ЭКРАН ================= -->
+  <h3 id="mainHeader">Склад корма</h3>
+
+  <div class="session-info" id="sessionInfo"></div>
 
   <div class="net-status online" id="netStatus">
     <span class="net-dot"></span>
@@ -201,6 +275,7 @@
   <button class="btn-scan" id="scanBtn" onclick="startScan()">📡 СКАНИРОВАТЬ МЕТКУ</button>
   <button class="btn-secondary" onclick="manualSync()">🔄 СИНХРОНИЗИРОВАТЬ</button>
   <button class="btn-secondary" onclick="openJournal()">📋 ЖУРНАЛ ИСТОРИИ</button>
+  <button class="btn-logout" onclick="logout()">🚪 СМЕНИТЬ УЧАСТОК</button>
 
   <div id="log" class="log"></div>
 
@@ -246,7 +321,9 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbx8t5SEmtTNnm3C0oe1w_gZ
 
 const STORAGE_QUEUE   = 'feed_queue_v1';
 const STORAGE_HISTORY = 'feed_history_v1';
+const STORAGE_SESSION = 'feed_session_v1';
 const MAX_HISTORY     = 200;
+const SESSION_MINUTES = 30;
 
 let currentMode = null;
 let pendingOperation = null;
@@ -254,8 +331,190 @@ let scanning = false;
 let lastTagId = null;
 let lastTagTime = 0;
 let modeTimer = null;
+let sessionTimer = null;
+let sessionInterval = null;
 let journalFilter = 'all';
 let isSyncing = false;
+let currentSite = null;
+
+/* ============================================================
+   СЕССИЯ
+   ============================================================ */
+function saveSession(site) {
+  localStorage.setItem(STORAGE_SESSION, JSON.stringify({
+    site: site,
+    expires: Date.now() + SESSION_MINUTES * 60 * 1000
+  }));
+  startSessionTimer();
+  updateSessionInfo();
+}
+
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORAGE_SESSION) || 'null');
+    if (s && s.expires > Date.now()) {
+      currentSite = s.site;
+      startSessionTimer();
+      updateSessionInfo();
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function clearSession() {
+  localStorage.removeItem(STORAGE_SESSION);
+  clearTimeout(sessionTimer);
+  clearInterval(sessionInterval);
+}
+
+function startSessionTimer() {
+  clearTimeout(sessionTimer);
+  clearInterval(sessionInterval);
+
+  const s = JSON.parse(localStorage.getItem(STORAGE_SESSION) || 'null');
+  if (!s) return;
+
+  const remaining = s.expires - Date.now();
+  if (remaining <= 0) { forceLogout(); return; }
+
+  sessionTimer = setTimeout(forceLogout, remaining);
+
+  // Обновляем отображение времени каждые 10 секунд
+  sessionInterval = setInterval(updateSessionInfo, 10000);
+}
+
+function updateSessionInfo() {
+  const el = document.getElementById('sessionInfo');
+  if (!el || !currentSite) return;
+
+  try {
+    const s = JSON.parse(localStorage.getItem(STORAGE_SESSION) || 'null');
+    if (!s) { el.textContent = ''; return; }
+
+    const remaining = Math.max(0, s.expires - Date.now());
+    const min = Math.floor(remaining / 60000);
+    const sec = Math.floor((remaining % 60000) / 1000);
+
+    el.innerHTML = 'Сессия: <b>' + min + ':' + String(sec).padStart(2, '0') + '</b>';
+  } catch (e) {}
+}
+
+function forceLogout() {
+  clearSession();
+  currentSite = null;
+
+  // Закрываем все оверлеи
+  document.getElementById('confirmOverlay').classList.remove('active');
+  document.getElementById('journalOverlay').classList.remove('active');
+
+  // Сбрасываем режим
+  currentMode = null;
+  pendingOperation = null;
+  const modeEl = document.getElementById('mode');
+  modeEl.className = 'mode none';
+  modeEl.textContent = 'Режим не выбран';
+  document.getElementById('batchInput').style.display = 'none';
+
+  // Показываем экран входа
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('loginStatus').textContent = 'Сессия истекла. Приложите метку участка заново.';
+
+  showToast('⏰ Сессия истекла', 'warn');
+  soundError();
+}
+
+/* ============================================================
+   ВХОД ПО МЕТКЕ УЧАСТКА
+   ============================================================ */
+async function loginByNfc() {
+  if (!('NDEFReader' in window)) {
+    document.getElementById('loginError').textContent = 'NFC не поддерживается. Используйте Chrome на Android.';
+    return;
+  }
+
+  const status = document.getElementById('loginStatus');
+  const errEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginScanBtn');
+
+  status.textContent = '⏳ Приложите метку участка к телефону...';
+  errEl.textContent = '';
+  btn.disabled = true;
+
+  try {
+    const reader = new NDEFReader();
+    await reader.scan();
+
+    reader.onreading = async (event) => {
+      const tagId = event.serialNumber;
+      status.textContent = 'Проверка метки...';
+
+      try {
+        const res = await fetch(API_URL + '?action=login&tagId=' + encodeURIComponent(tagId));
+        const data = await res.json();
+
+        if (data.error) {
+          errEl.textContent = '❌ ' + data.error;
+          status.textContent = 'Ошибка. Попробуйте снова.';
+          soundError();
+          btn.disabled = false;
+          return;
+        }
+
+        // Успешный вход
+        currentSite = data.site;
+        saveSession(currentSite);
+        soundSuccess();
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+        document.getElementById('loginOverlay').classList.add('hidden');
+        updateHeader();
+        log('✅ Вход: ' + currentSite);
+        btn.disabled = false;
+      } catch (e) {
+        errEl.textContent = '❌ Ошибка сети. Проверьте подключение.';
+        status.textContent = 'Готов к сканированию';
+        soundError();
+        btn.disabled = false;
+      }
+    };
+
+    reader.onreadingerror = () => {
+      errEl.textContent = '❌ Ошибка чтения метки';
+      status.textContent = 'Готов к сканированию';
+      soundError();
+      btn.disabled = false;
+    };
+  } catch (err) {
+    errEl.textContent = '❌ Ошибка сканирования: ' + err.message;
+    status.textContent = 'Готов к сканированию';
+    soundError();
+    btn.disabled = false;
+  }
+}
+
+function updateHeader() {
+  const h3 = document.getElementById('mainHeader');
+  if (currentSite) {
+    const cls = currentSite === 'Садковый' ? 'sadkovy' : 'basseynovy';
+    h3.innerHTML = 'Склад корма<span class="site-badge ' + cls + '">' + currentSite + '</span>';
+  } else {
+    h3.textContent = 'Склад корма';
+  }
+}
+
+function logout() {
+  if (!confirm('Сменить участок? Потребуется приложить метку заново.')) return;
+  clearSession();
+  currentSite = null;
+  document.getElementById('mainHeader').textContent = 'Склад корма';
+  document.getElementById('sessionInfo').textContent = '';
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('loginStatus').textContent = 'Готов к сканированию';
+  document.getElementById('loginError').textContent = '';
+  soundSuccess();
+}
 
 /* ============================================================
    LOCALSTORAGE
@@ -281,6 +540,7 @@ function addToQueue(op) {
   op.localId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
   op.timestamp = new Date().toISOString();
   op.status = 'pending';
+  op.site = currentSite;
   queue.push(op);
   saveQueue(queue);
   const history = loadHistory();
@@ -333,7 +593,6 @@ async function syncQueue(silent = false) {
   const queue = loadQueue();
   if (queue.length === 0) { updateNetStatus(); return; }
 
-  const initialCount = queue.length;
   isSyncing = true;
   updateNetStatus();
 
@@ -350,7 +609,8 @@ async function syncQueue(silent = false) {
           operation: op.operation,
           quantity: op.quantity,
           productionDate: op.productionDate,
-          localId: op.localId
+          localId: op.localId,
+          site: op.site
         })
       });
       const data = await res.json();
@@ -375,26 +635,17 @@ async function syncQueue(silent = false) {
 
   if (sentCount > 0 && remaining.length === 0) {
     if (!silent) {
-      if (sentCount === 1) soundSyncSingle();
-      else soundSyncSuccess();
+      if (sentCount === 1) soundSyncSingle(); else soundSyncSuccess();
       if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
     }
     showToast('✅ Синхронизировано: ' + sentCount, 'ok');
     log('✅ Синхронизация: отправлено ' + sentCount);
-  } else if (sentCount > 0 && remaining.length > 0) {
-    if (!silent) {
-      soundSyncPartial();
-      if (navigator.vibrate) navigator.vibrate([80, 40, 80, 40, 80]);
-    }
+  } else if (sentCount > 0) {
+    if (!silent) soundSyncPartial();
     showToast('✅ Отправлено: ' + sentCount + ' · осталось: ' + remaining.length, 'warn');
-    log('⚠️ Частично: ' + sentCount + ' из ' + initialCount);
   } else if (errorCount > 0) {
-    if (!silent) {
-      soundError();
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-    }
+    if (!silent) soundError();
     showToast('❌ Ошибок: ' + errorCount, 'err');
-    log('❌ Ошибок синхронизации: ' + errorCount);
   }
 }
 
@@ -447,23 +698,24 @@ function soundSyncSingle()  { playSequence([{freq:880,duration:0.08},{freq:1175,
    РЕЖИМ
    ============================================================ */
 function setMode(mode) {
+  if (!currentSite) {
+    showToast('Сначала приложите метку участка', 'warn');
+    soundError();
+    return;
+  }
+
   currentMode = mode;
   const el = document.getElementById('mode');
   el.className = 'mode ' + mode;
   el.textContent = mode === 'in' ? 'РЕЖИМ: + ПРИХОД' : 'РЕЖИМ: − РАСХОД';
 
-  // Показываем блок с полями в обоих режимах
   document.getElementById('batchInput').style.display = 'block';
-
-  // Поле «Дата производства» — только для прихода
   document.getElementById('prodDateBlock').style.display = (mode === 'in') ? 'block' : 'none';
 
-  // Ставим сегодняшнюю дату при приходе
   if (mode === 'in' && !document.getElementById('prodDate').value) {
     document.getElementById('prodDate').valueAsDate = new Date();
   }
 
-  // Сбрасываем количество на 1 при каждом переключении режима
   document.getElementById('qty').value = 1;
 
   clearTimeout(modeTimer);
@@ -477,9 +729,15 @@ function setMode(mode) {
 }
 
 /* ============================================================
-   СКАНИРОВАНИЕ
+   СКАНИРОВАНИЕ МЕТКИ КОРМА
    ============================================================ */
 async function startScan() {
+  if (!currentSite) {
+    showToast('Сначала приложите метку участка', 'warn');
+    soundError();
+    document.getElementById('loginOverlay').classList.remove('hidden');
+    return;
+  }
   if (!currentMode) { showToast('Сначала выберите режим', 'warn'); soundError(); return; }
   if (!('NDEFReader' in window)) { showToast('NFC не поддерживается', 'err'); soundError(); return; }
   if (scanning) return;
@@ -575,7 +833,8 @@ function showConfirmScreen() {
   }
   if (navigator.vibrate) navigator.vibrate(op.operation === 'in' ? [80] : [80, 60, 80]);
 
-  let html = '<div class="row"><span class="label">Рецептура</span><span class="value">' + op.feedName + '</span></div>' +
+  let html = '<div class="row"><span class="label">Участок</span><span class="value">' + currentSite + '</span></div>' +
+             '<div class="row"><span class="label">Рецептура</span><span class="value">' + op.feedName + '</span></div>' +
              '<div class="row"><span class="label">Метка</span><span class="value">' + op.tagId.slice(-8) + '</span></div>' +
              '<div class="row"><span class="label">Количество</span><span class="value">' + op.quantity + ' меш.</span></div>';
   if (op.operation === 'in' && op.productionDate) {
@@ -602,11 +861,20 @@ function cancelConfirm() {
 
 async function confirmOperation() {
   if (!pendingOperation) return;
+  if (!currentSite) {
+    showToast('Сессия истекла — приложите метку', 'err');
+    soundError();
+    forceLogout();
+    return;
+  }
+
   const op = pendingOperation;
   document.getElementById('confirmOverlay').classList.remove('active');
 
   document.getElementById('scanBtn').disabled = true;
   document.getElementById('scanBtn').textContent = '⏳ Сохранение...';
+
+  const localId = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
   if (navigator.onLine) {
     try {
@@ -617,7 +885,8 @@ async function confirmOperation() {
           operation: op.operation,
           quantity: op.quantity,
           productionDate: op.productionDate,
-          localId: 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+          localId: localId,
+          site: currentSite
         })
       });
       const data = await res.json();
@@ -631,11 +900,11 @@ async function confirmOperation() {
         const sign = op.operation === 'in' ? '+' : '−';
         const msg = sign + op.quantity + ' ' + data.feedName + ' | остаток: ' + data.totalStock;
         showToast('✅ ' + msg, 'ok');
-        log('✅ ' + msg);
+        log('✅ ' + currentSite + ' | ' + msg);
 
         const history = loadHistory();
         history.unshift({
-          localId: 'op_' + Date.now(),
+          localId: localId,
           timestamp: new Date().toISOString(),
           tagId: op.tagId,
           operation: op.operation,
@@ -644,7 +913,8 @@ async function confirmOperation() {
           feedName: data.feedName,
           batchId: data.batchId,
           totalStock: data.totalStock,
-          status: 'sent'
+          status: 'sent',
+          site: currentSite
         });
         saveHistory(history);
         renderJournal();
@@ -745,6 +1015,7 @@ function renderJournal() {
       '<div class="j-body">' +
         '<div class="j-title">' + sign + item.quantity + ' · ' + (item.feedName || item.tagId.slice(-8)) + '</div>' +
         '<div class="j-sub">' + dateStr +
+          (item.site ? ' · ' + item.site : '') +
           (item.batchId ? ' · партия ' + item.batchId : '') +
           (item.totalStock !== undefined ? ' · остаток: ' + item.totalStock : '') +
         '</div>' + statusBadge +
@@ -761,9 +1032,10 @@ function clearJournal() {
 function exportJournalCSV() {
   const history = loadHistory();
   if (history.length === 0) { showToast('Нет данных', 'warn'); return; }
-  const headers = ['Дата/время', 'Тип', 'Рецептура', 'Кол-во', 'Метка', 'Партия', 'Остаток', 'Статус'];
+  const headers = ['Дата/время', 'Участок', 'Тип', 'Рецептура', 'Кол-во', 'Метка', 'Партия', 'Остаток', 'Статус'];
   const rows = history.map(h => [
     new Date(h.timestamp).toLocaleString('ru-RU'),
+    h.site || '',
     h.operation === 'in' ? 'Приход' : 'Расход',
     h.feedName || '',
     h.quantity,
@@ -798,6 +1070,7 @@ function showToast(message, type = '') {
 }
 function log(msg) {
   const el = document.getElementById('log');
+  if (!el) return;
   el.innerHTML = '<div>' + new Date().toLocaleTimeString() + ': ' + msg + '</div>' + el.innerHTML;
 }
 
@@ -806,9 +1079,19 @@ function log(msg) {
    ============================================================ */
 document.body.addEventListener('touchstart', () => getAudioCtx(), { once: true });
 document.body.addEventListener('click',      () => getAudioCtx(), { once: true });
-updateNetStatus();
-setTimeout(() => syncQueue(true), 1000);
-renderJournal();
+
+(function init() {
+  updateNetStatus();
+  setTimeout(() => syncQueue(true), 1000);
+  renderJournal();
+
+  if (loadSession()) {
+    document.getElementById('loginOverlay').classList.add('hidden');
+    updateHeader();
+  } else {
+    document.getElementById('loginOverlay').classList.remove('hidden');
+  }
+})();
 </script>
 </body>
 </html>
